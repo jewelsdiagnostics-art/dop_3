@@ -23,6 +23,9 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <style>
@@ -324,10 +327,54 @@
 
 <script>
 // ============================================
-// USER DATABASE
+// FIREBASE CONFIGURATION - Realtime Database
 // ============================================
+const firebaseConfig = {
+  apiKey: "AIzaSyA6fxEumd4V1ZyJpL2xev2TfC3ePs12Mb4",
+  authDomain: "psychiatry-dept-portal.firebaseapp.com",
+  databaseURL: "https://psychiatry-dept-portal-default-rtdb.firebaseio.com",
+  projectId: "psychiatry-dept-portal",
+  storageBucket: "psychiatry-dept-portal.appspot.com",
+  messagingSenderId: "713528340356",
+  appId: "1:713528340356:web:7f7e853a3f5d08a6d6e989"
+};
+
+// Initialize Firebase
+let db = null;
+let firebaseInitialized = false;
+
+try {
+  if (typeof firebase !== 'undefined') {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    firebaseInitialized = true;
+    console.log('✅ Firebase initialized successfully');
+  } else {
+    console.warn('⚠️ Firebase SDK not loaded, using localStorage fallback');
+  }
+} catch (e) {
+  console.error('❌ Firebase initialization failed:', e);
+  console.log('⚠️ Falling back to localStorage mode');
+}
+
+// Firebase helper functions
+function saveToFirebase(path, data) {
+  if (!firebaseInitialized || !db) {
+    console.log('Firebase not available, using localStorage');
+    return Promise.resolve();
+  }
+  return db.ref(path).set(data);
+}
+
+function loadFromFirebase(path) {
+  if (!firebaseInitialized || !db) {
+    return Promise.resolve(null);
+  }
+  return db.ref(path).once('value').then(snapshot => snapshot.val());
+}
+
 // ============================================
-// USER DATABASE - with persistence
+// USER DATABASE - with Firebase + persistence
 // ============================================
 const DEFAULT_USERS = [
   {id:1, staffId:"hod@psych", password:"hod123", name:"Dr. Delali Fiagbe", role:"admin", team:"A", email:"dfiagbe@kbth.gov.gh", title:"Head of Department"},
@@ -345,44 +392,142 @@ const DEFAULT_USERS = [
   {id:13, staffId:"member2", password:"member", name:"Priscilla Okine", role:"member", team:"D", email:"priscilla@kbth.gov.gh", title:"Staff Nurse"},
 ];
 
-// Load users from localStorage or use defaults
-let usersDB = (() => {
-  const saved = localStorage.getItem('psychUsersDB');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch(e) {
-      console.error('Failed to load saved users:', e);
-    }
-  }
-  return [...DEFAULT_USERS];
-})();
+// Initialize usersDB - will load from Firebase or localStorage
+let usersDB = [...DEFAULT_USERS];
 
-// Save usersDB to localStorage whenever it changes
+// Load users from Firebase first, then localStorage fallback
+function loadUsersDB() {
+  return new Promise((resolve) => {
+    if (firebaseInitialized && db) {
+      db.ref('usersDB').once('value').then(snapshot => {
+        const data = snapshot.val();
+        if (data && Array.isArray(data) && data.length > 0) {
+          usersDB = data;
+          console.log('✅ Users loaded from Firebase:', usersDB.length, 'users');
+          // Also save to localStorage as backup
+          localStorage.setItem('psychUsersDB', JSON.stringify(usersDB));
+        } else {
+          // Try localStorage as fallback
+          const saved = localStorage.getItem('psychUsersDB');
+          if (saved) {
+            try {
+              usersDB = JSON.parse(saved);
+              console.log('✅ Users loaded from localStorage:', usersDB.length, 'users');
+              // Save to Firebase for next time
+              db.ref('usersDB').set(usersDB);
+            } catch(e) {
+              console.error('Failed to parse localStorage users:', e);
+            }
+          }
+        }
+        resolve(usersDB);
+      }).catch(err => {
+        console.error('Firebase load failed:', err);
+        // Fallback to localStorage
+        const saved = localStorage.getItem('psychUsersDB');
+        if (saved) {
+          try {
+            usersDB = JSON.parse(saved);
+          } catch(e) {}
+        }
+        resolve(usersDB);
+      });
+    } else {
+      // No Firebase, use localStorage
+      const saved = localStorage.getItem('psychUsersDB');
+      if (saved) {
+        try {
+          usersDB = JSON.parse(saved);
+          console.log('✅ Users loaded from localStorage:', usersDB.length, 'users');
+        } catch(e) {}
+      }
+      resolve(usersDB);
+    }
+  });
+}
+
+// Save usersDB to Firebase and localStorage
 function saveUsersDB() {
+  // Always save to localStorage as backup
   localStorage.setItem('psychUsersDB', JSON.stringify(usersDB));
-  console.log('Users saved to localStorage:', usersDB.length, 'users');
+  
+  // Save to Firebase if available
+  if (firebaseInitialized && db) {
+    db.ref('usersDB').set(usersDB)
+      .then(() => console.log('✅ Users saved to Firebase:', usersDB.length, 'users'))
+      .catch(err => console.error('❌ Failed to save to Firebase:', err));
+  } else {
+    console.log('💾 Users saved to localStorage:', usersDB.length, 'users');
+  }
 }
 
 // ============================================
-// SCHEDULE DATA - with persistence
+// SCHEDULE DATA - with Firebase persistence
 // ============================================
-let scheduleData = (() => {
-  const saved = localStorage.getItem('psychScheduleData');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch(e) {
-      console.error('Failed to load saved schedule:', e);
-    }
-  }
-  return { shifts: {}, lastUpdated: null };
-})();
+let scheduleData = { shifts: {}, lastUpdated: null };
 
-// Save schedule to localStorage
+// Load schedule from Firebase first, then localStorage fallback
+function loadScheduleData() {
+  return new Promise((resolve) => {
+    if (firebaseInitialized && db) {
+      db.ref('scheduleData').once('value').then(snapshot => {
+        const data = snapshot.val();
+        if (data && data.shifts) {
+          scheduleData = data;
+          console.log('✅ Schedule loaded from Firebase');
+          // Backup to localStorage
+          localStorage.setItem('psychScheduleData', JSON.stringify(scheduleData));
+        } else {
+          // Try localStorage
+          const saved = localStorage.getItem('psychScheduleData');
+          if (saved) {
+            try {
+              scheduleData = JSON.parse(saved);
+              console.log('✅ Schedule loaded from localStorage');
+              // Save to Firebase
+              db.ref('scheduleData').set(scheduleData);
+            } catch(e) {}
+          }
+        }
+        resolve(scheduleData);
+      }).catch(err => {
+        console.error('Firebase schedule load failed:', err);
+        // Fallback to localStorage
+        const saved = localStorage.getItem('psychScheduleData');
+        if (saved) {
+          try {
+            scheduleData = JSON.parse(saved);
+          } catch(e) {}
+        }
+        resolve(scheduleData);
+      });
+    } else {
+      // No Firebase
+      const saved = localStorage.getItem('psychScheduleData');
+      if (saved) {
+        try {
+          scheduleData = JSON.parse(saved);
+          console.log('✅ Schedule loaded from localStorage');
+        } catch(e) {}
+      }
+      resolve(scheduleData);
+    }
+  });
+}
+
+// Save schedule to Firebase and localStorage
 function saveScheduleData() {
+  // Always backup to localStorage
   localStorage.setItem('psychScheduleData', JSON.stringify(scheduleData));
-  console.log('Schedule saved to localStorage');
+  
+  // Save to Firebase if available
+  if (firebaseInitialized && db) {
+    db.ref('scheduleData').set(scheduleData)
+      .then(() => console.log('✅ Schedule saved to Firebase'))
+      .catch(err => console.error('❌ Failed to save schedule to Firebase:', err));
+  } else {
+    console.log('💾 Schedule saved to localStorage');
+  }
 }
 let currentUser = null;
 let currentWeekOffset = 0;
@@ -1691,8 +1836,13 @@ if (savedSheetId && document.getElementById('googleSheetId')) {
   document.getElementById('googleSheetId').value = savedSheetId;
 }
 
-// Initialize app
-setTimeout(() => {
+// Initialize app - Load Firebase data first
+setTimeout(async () => {
+  // Load data from Firebase first
+  console.log('🔄 Loading data from Firebase...');
+  await Promise.all([loadUsersDB(), loadScheduleData()]);
+  console.log('✅ Data loaded. Users:', usersDB.length, 'Schedule shifts:', Object.keys(scheduleData.shifts).length);
+  
   document.getElementById('loadingOverlay').style.display = 'none';
   
   // Check if user is already logged in (session persistence)
