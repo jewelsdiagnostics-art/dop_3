@@ -294,7 +294,10 @@
               <h3 class="font-semibold text-sm mb-1">📊 Data Status</h3>
               <div id="dataStatus" class="text-xs text-zinc-500">No schedule data loaded</div>
             </div>
-            <button id="clearDataBtn" class="px-4 py-2 rounded-xl text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30">Clear Data</button>
+            <div class="flex gap-2">
+              <button id="clearDataBtn" class="px-4 py-2 rounded-xl text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30">Clear Schedule</button>
+              <button id="resetAllBtn" class="px-4 py-2 rounded-xl text-sm bg-red-600/30 text-red-300 hover:bg-red-600/40 font-semibold">⚠️ Reset All</button>
+            </div>
           </div>
         </div>
       </div>
@@ -323,7 +326,10 @@
 // ============================================
 // USER DATABASE
 // ============================================
-let usersDB = [
+// ============================================
+// USER DATABASE - with persistence
+// ============================================
+const DEFAULT_USERS = [
   {id:1, staffId:"hod@psych", password:"hod123", name:"Dr. Delali Fiagbe", role:"admin", team:"A", email:"dfiagbe@kbth.gov.gh", title:"Head of Department"},
   {id:2, staffId:"leaderA", password:"leadA", name:"Dr. Richard Dei-Asamoa", role:"team_leader", team:"A", email:"richard@kbth.gov.gh", title:"Team A Lead"},
   {id:3, staffId:"leaderB", password:"leadB", name:"Dr. Alberta Nsiah-Asamoah", role:"team_leader", team:"B", email:"alberta@kbth.gov.gh", title:"Team B Lead"},
@@ -339,7 +345,45 @@ let usersDB = [
   {id:13, staffId:"member2", password:"member", name:"Priscilla Okine", role:"member", team:"D", email:"priscilla@kbth.gov.gh", title:"Staff Nurse"},
 ];
 
-let scheduleData = { shifts: {}, lastUpdated: null };
+// Load users from localStorage or use defaults
+let usersDB = (() => {
+  const saved = localStorage.getItem('psychUsersDB');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch(e) {
+      console.error('Failed to load saved users:', e);
+    }
+  }
+  return [...DEFAULT_USERS];
+})();
+
+// Save usersDB to localStorage whenever it changes
+function saveUsersDB() {
+  localStorage.setItem('psychUsersDB', JSON.stringify(usersDB));
+  console.log('Users saved to localStorage:', usersDB.length, 'users');
+}
+
+// ============================================
+// SCHEDULE DATA - with persistence
+// ============================================
+let scheduleData = (() => {
+  const saved = localStorage.getItem('psychScheduleData');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch(e) {
+      console.error('Failed to load saved schedule:', e);
+    }
+  }
+  return { shifts: {}, lastUpdated: null };
+})();
+
+// Save schedule to localStorage
+function saveScheduleData() {
+  localStorage.setItem('psychScheduleData', JSON.stringify(scheduleData));
+  console.log('Schedule saved to localStorage');
+}
 let currentUser = null;
 let currentWeekOffset = 0;
 let teamChart = null;
@@ -513,6 +557,7 @@ function handleVerification() {
   };
   
   usersDB.push(newUser);
+  saveUsersDB(); // Persist new user to localStorage
   
   // Clear pending data
   delete verificationCodes[email];
@@ -613,6 +658,7 @@ function handleChangePassword() {
   if (userIndex !== -1) {
     usersDB[userIndex].password = newPass;
   }
+  saveUsersDB(); // Persist password change to localStorage
   
   // Update saved credentials if remember me is enabled
   if (rememberMeEnabled && savedCredentials) {
@@ -1045,6 +1091,7 @@ async function syncFromGoogleSheets() {
     if (newUsers.length > 0) {
       let existingAdmins = usersDB.filter(u => u.role === 'admin');
       usersDB = [...existingAdmins, ...newUsers];
+      saveUsersDB(); // Persist to localStorage
       renderMembersTable();
       if (currentUser) updateDashboardUI();
       document.getElementById('sheetStatus').innerHTML = `<span class="text-emerald-400">✅ Synced ${newUsers.length} users from Google Sheets!</span>`;
@@ -1338,8 +1385,40 @@ function clearData() {
     scheduleData = { shifts: {}, lastUpdated: null };
     localStorage.removeItem('psychScheduleData');
     document.getElementById('dataStatus').innerHTML = '<span class="text-yellow-400">No schedule data loaded</span>';
-    toast('Data cleared');
+    toast('Schedule data cleared');
     if (currentUser) updateDashboardUI();
+  }
+}
+
+function resetAllData() {
+  if (confirm('⚠️ WARNING: This will reset ALL data including staff members, schedules, and settings.\n\nThis cannot be undone. Are you sure?')) {
+    // Clear all localStorage
+    localStorage.removeItem('psychUsersDB');
+    localStorage.removeItem('psychScheduleData');
+    localStorage.removeItem('googleSheetId');
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('savedCredentials');
+    localStorage.removeItem('rememberMe');
+    
+    // Reset variables to defaults
+    usersDB = [...DEFAULT_USERS];
+    scheduleData = { shifts: {}, lastUpdated: null };
+    savedSheetId = '';
+    currentUser = null;
+    
+    // Update UI
+    document.getElementById('dataStatus').innerHTML = '<span class="text-yellow-400">All data reset to defaults</span>';
+    document.getElementById('sheetStatus').innerHTML = '<span class="text-zinc-500">Sheet ID cleared</span>';
+    if (document.getElementById('googleSheetId')) {
+      document.getElementById('googleSheetId').value = '';
+    }
+    
+    toast('All data reset to factory defaults');
+    
+    // Reload page after short delay
+    setTimeout(() => {
+      location.reload();
+    }, 1500);
   }
 }
 
@@ -1572,6 +1651,7 @@ document.getElementById('searchMemberInput')?.addEventListener('focus', () => {
   }
 });
 document.getElementById('clearDataBtn')?.addEventListener('click', clearData);
+document.getElementById('resetAllBtn')?.addEventListener('click', resetAllData);
 document.getElementById('connectGoogleSheetBtn')?.addEventListener('click', syncFromGoogleSheets);
 document.getElementById('syncFromSheetsBtn')?.addEventListener('click', syncFromGoogleSheets);
 document.getElementById('testSheetBtn')?.addEventListener('click', testSheetConnection);
