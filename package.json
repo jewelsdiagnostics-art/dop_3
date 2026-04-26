@@ -1,0 +1,15 @@
+{
+  "name": "psychiatry-department-portal",
+  "version": "1.0.0",
+  "description": "Psychiatry Department Management Portal",
+  "main": "psych department.html",
+  "scripts": {
+    "start": "python -m http.server 8000",
+    "dev": "python -m http.server 8000"
+  },
+  "keywords": ["psychiatry", "department", "portal", "schedule", "management"],
+  "author": "Psychiatry Department",
+  "license": "MIT",
+  "devDependencies": {},
+  "dependencies": {}
+}
