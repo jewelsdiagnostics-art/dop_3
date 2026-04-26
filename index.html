@@ -1235,11 +1235,15 @@ function parseExcelShifts(data) {
           const cell = row[j];
           if (cell) {
             const cellStr = cell.toString().toLowerCase();
-            if (cellStr.includes('2024') || cellStr.includes('2025') || 
-                cellStr.includes('mon') || cellStr.includes('tue') || 
-                cellStr.includes('wed') || cellStr.includes('thu') || 
-                cellStr.includes('fri') || cellStr.includes('sat') || 
-                cellStr.includes('sun') || (typeof cell === 'number' && cell > 40000)) {
+            // Check for years 2020-2030 and day names
+            const hasYear = cellStr.match(/202[0-9]|2030/);
+            const hasDay = cellStr.includes('mon') || cellStr.includes('tue') || 
+                          cellStr.includes('wed') || cellStr.includes('thu') || 
+                          cellStr.includes('fri') || cellStr.includes('sat') || 
+                          cellStr.includes('sun');
+            const hasDate = hasYear || hasDay || (typeof cell === 'number' && cell > 40000);
+            
+            if (hasDate) {
               hasDateContent = true;
               dateColumns.push(j);
             }
@@ -1262,12 +1266,14 @@ function parseExcelShifts(data) {
           if (!dataRow || !dataRow[0]) continue;
           
           const name = dataRow[0].toString().toLowerCase().trim();
-          // More flexible name detection
-          if (name && name.length > 2 && 
+          // More flexible name detection - allows letters, spaces, dots, hyphens
+          const isValidName = name && name.length > 2 && 
               !name.includes('name') && !name.includes('total') && 
               !name.includes('sum') && !name.includes('count') &&
               !name.includes('shift') && !name.includes('roster') &&
-              /^[a-z\s\.]+$/.test(name)) {
+              /^[a-zA-Z\s\.-]+$/.test(name);
+          
+          if (isValidName) {
             
             console.log(`Processing staff: ${name}`);
             
