@@ -1838,13 +1838,25 @@ if (savedSheetId && document.getElementById('googleSheetId')) {
 
 // Initialize app - Load Firebase data first
 setTimeout(async () => {
+  // Hard timeout - ALWAYS hide loading after 3 seconds max
+  const forceHideLoading = setTimeout(() => {
+    console.log('⏱️ Force hiding loading screen');
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) overlay.style.display = 'none';
+    // Show login screen if still showing loading
+    const loginScreen = document.getElementById('loginScreen');
+    if (loginScreen && loginScreen.style.display !== 'none') {
+      showLoginForm();
+    }
+  }, 3000);
+  
   // Load data from Firebase first (with timeout)
   console.log('🔄 Loading data from Firebase...');
   
   try {
-    // Add 5-second timeout for Firebase loading
+    // Add 2-second timeout for Firebase loading
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Firebase load timeout')), 5000)
+      setTimeout(() => reject(new Error('Firebase load timeout')), 2000)
     );
     await Promise.race([
       Promise.all([loadUsersDB(), loadScheduleData()]),
@@ -1865,7 +1877,12 @@ setTimeout(async () => {
     console.log('💾 Loaded from localStorage. Users:', usersDB.length);
   }
   
-  document.getElementById('loadingOverlay').style.display = 'none';
+  // Clear the force timeout since we're done
+  clearTimeout(forceHideLoading);
+  
+  // Hide loading
+  const overlay = document.getElementById('loadingOverlay');
+  if (overlay) overlay.style.display = 'none';
   
   // Check if user is already logged in (session persistence)
   const savedUser = localStorage.getItem('currentUser');
