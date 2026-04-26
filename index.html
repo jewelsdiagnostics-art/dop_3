@@ -1838,10 +1838,32 @@ if (savedSheetId && document.getElementById('googleSheetId')) {
 
 // Initialize app - Load Firebase data first
 setTimeout(async () => {
-  // Load data from Firebase first
+  // Load data from Firebase first (with timeout)
   console.log('🔄 Loading data from Firebase...');
-  await Promise.all([loadUsersDB(), loadScheduleData()]);
-  console.log('✅ Data loaded. Users:', usersDB.length, 'Schedule shifts:', Object.keys(scheduleData.shifts).length);
+  
+  try {
+    // Add 5-second timeout for Firebase loading
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Firebase load timeout')), 5000)
+    );
+    await Promise.race([
+      Promise.all([loadUsersDB(), loadScheduleData()]),
+      timeoutPromise
+    ]);
+    console.log('✅ Data loaded from Firebase. Users:', usersDB.length);
+  } catch (err) {
+    console.warn('⚠️ Firebase load failed or timed out, using localStorage:', err.message);
+    // Fall back to localStorage only
+    const savedUsers = localStorage.getItem('psychUsersDB');
+    const savedSchedule = localStorage.getItem('psychScheduleData');
+    if (savedUsers) {
+      try { usersDB = JSON.parse(savedUsers); } catch(e) {}
+    }
+    if (savedSchedule) {
+      try { scheduleData = JSON.parse(savedSchedule); } catch(e) {}
+    }
+    console.log('💾 Loaded from localStorage. Users:', usersDB.length);
+  }
   
   document.getElementById('loadingOverlay').style.display = 'none';
   
